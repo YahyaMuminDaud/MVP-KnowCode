@@ -1,0 +1,6 @@
+# Local Claude Code skill bundles (reference data/scripts, not project source)
+.claude/skills/ui-ux-pro-max/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
