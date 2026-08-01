@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Good Code vs. Bad Code</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #05070c;
+      }
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      :root {
+        --stage-scale: 1;
+      }
+      :root {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --surface-2: #334155;
+        --border: #334155;
+        --text: #f8fafc;
+        --text-muted: #94a3b8;
+        --accent: #22c55e;
+        --accent-hover: #16a34a;
+        --easy: #22c55e;
+        --medium: #f59e0b;
+        --hard: #ef4444;
+        --legendary: #a855f7;
+      }
+      .mono {
+        font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      }
+
+      /* Each scene is its own composition root (data-composition-id), so its
+         inner .clip section stays framework-owned. Visibility for the LIVE
+         presenter view is controlled on this OUTER wrapper only, by the
+         nav controller script further down — never on .clip.
+         Each scene-frame is also the fixed 1920x1080 stage itself, scaled
+         and centered to fit whatever window it's opened in (the fit()
+         function sets --stage-scale) — this keeps every scene a direct
+         child of the document body, which the composition contract and
+         hyperframes check rely on. */
+      .scene-frame {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        width: 1920px;
+        height: 1080px;
+        transform: translate(-50%, -50%) scale(var(--stage-scale));
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      .scene-frame.is-active {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+      }
+      .slide {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: var(--bg);
+        padding: 96px 150px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 30px;
+        overflow: hidden;
+      }
+      .slide.center {
+        align-items: center;
+        text-align: center;
+      }
+
+      .eyebrow {
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .headline {
+        font-size: 72px;
+        font-weight: 700;
+        line-height: 1.18;
+        color: var(--text);
+        max-width: 1560px;
+      }
+      .slide.center .headline {
+        max-width: 1400px;
+      }
+      .headline.tight {
+        font-size: 58px;
+      }
+      .headline.accent-line {
+        color: var(--accent);
+      }
+      .headline.giant {
+        font-size: 104px;
+      }
+      .body-text {
+        font-size: 38px;
+        line-height: 1.45;
+        color: var(--text-muted);
+        max-width: 1360px;
+      }
+      .caption {
+        font-size: 30px;
+        line-height: 1.4;
+        color: var(--text-muted);
+      }
+      .caption .accent {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      /* two column comparison */
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 36px;
+      }
+      .col {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 44px;
+      }
+      .col.bad {
+        border-color: var(--hard);
+      }
+      .col.good {
+        border-color: var(--easy);
+      }
+      .col h3 {
+        font-size: 34px;
+        margin-bottom: 16px;
+      }
+      .col.bad h3 {
+        color: var(--hard);
+      }
+      .col.good h3 {
+        color: var(--easy);
+      }
+      .col p {
+        font-size: 28px;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+
+      /* checklist / stacked symptom rows */
+      .checklist {
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+      }
+      .checklist-item {
+        display: flex;
+        gap: 24px;
+        align-items: flex-start;
+        font-size: 34px;
+        line-height: 1.4;
+        color: var(--text);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 30px 36px;
+      }
+      .checklist-item .num {
+        color: var(--accent);
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+
+      /* fragment reveal items start hidden; the scene's own GSAP timeline reveals them */
+      .fragment-item {
+        opacity: 0;
+      }
+
+      /* KnowCode UI mockup */
+      .mock-app {
+        display: grid;
+        grid-template-columns: 3fr 2fr;
+        gap: 24px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 28px;
+      }
+      .mock-code {
+        background: var(--bg);
+        border-radius: 12px;
+        overflow: hidden;
+        font-size: 24px;
+        color: var(--text);
+      }
+      .mock-code .row {
+        display: flex;
+        padding: 5px 20px;
+        border-left: 4px solid transparent;
+      }
+      .mock-code .row.flagged {
+        background: rgba(34, 197, 94, 0.15);
+        border-left-color: var(--easy);
+      }
+      .mock-panel {
+        background: var(--bg);
+        border-radius: 12px;
+        padding: 26px;
+      }
+      .mock-panel .mock-q {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 16px;
+        color: var(--text);
+      }
+      .mock-choice {
+        background: var(--surface-2);
+        border-radius: 8px;
+        padding: 14px 18px;
+        font-size: 21px;
+        color: var(--text-muted);
+        margin-bottom: 10px;
+      }
+      .mock-choice.correct {
+        background: rgba(34, 197, 94, 0.15);
+        border: 1px solid var(--easy);
+        color: var(--text);
+      }
+
+      /* Google Form call-to-action card (QR needs a light background to scan reliably) */
+      .form-card {
+        background: #ffffff;
+        border-radius: 20px;
+        padding: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .form-card img {
+        display: block;
+        width: 260px;
+        height: 260px;
+        image-rendering: pixelated;
+      }
+      .form-placeholder {
+        width: 260px;
+        height: 260px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 20px;
+        font-size: 20px;
+        line-height: 1.4;
+        color: #64748b;
+        font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      }
+
+      /* Presenter chrome — self-contained, no external player dependency */
+      #nav-bar {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: rgba(15, 23, 42, 0.92);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 10px 16px;
+        color: var(--text);
+        font-size: 18px;
+        font-family: system-ui, sans-serif;
+        user-select: none;
+      }
+      #nav-bar button {
+        background: var(--surface-2);
+        border: none;
+        color: var(--text);
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #nav-bar button:hover {
+        background: var(--accent);
+        color: #06210f;
+      }
+      #nav-bar button:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+      #nav-counter {
+        min-width: 56px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+      }
+      #notes-panel {
+        position: fixed;
+        left: 24px;
+        bottom: 24px;
+        z-index: 100;
+        max-width: 620px;
+        background: rgba(15, 23, 42, 0.95);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px 22px;
+        color: var(--text-muted);
+        font-size: 20px;
+        line-height: 1.5;
+        font-family: system-ui, sans-serif;
+        display: none;
+      }
+      #notes-panel.is-open {
+        display: block;
+      }
+      #notes-panel .notes-label {
+        color: var(--accent);
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 14px;
+        letter-spacing: 0.08em;
+        margin-bottom: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="application/hyperframes-slideshow+json" id="slideshow-manifest">
+      {
+        "slides": [
+          { "sceneId": "title", "notes": "Just let it sit. Don't say anything yet — this is the cold open." },
+          { "sceneId": "intro", "notes": "Land line 1, pause, then hit the pivot line. This question is the spine of the whole talk — say it slowly.", "fragments": [8.5, 9.0] },
+          { "sceneId": "real-issue", "notes": "This is the thesis. Slow down here — everything after this is evidence for this one claim." },
+          { "sceneId": "two-symptoms", "notes": "These are examples, not the whole list — don't present them as exhaustive. Let the room recognize itself in them.", "fragments": [28.4, 28.8] },
+          { "sceneId": "supposed-to-learn", "notes": "Both doors are real. The internship point isn't 'internships are bad' — it's that gatekeeping the skill behind landing one is bad." },
+          { "sceneId": "audience-question", "notes": "Actually pause and let people scan the QR code. Don't rush this — the answers are the point, not a formality." },
+          { "sceneId": "work-in-progress", "notes": "Say this plainly, don't undersell it as fake-humility — it's a genuine invitation before you pitch anything." },
+          { "sceneId": "knowcode-1", "notes": "First real look at the tool. Keep this concrete and short." },
+          { "sceneId": "knowcode-2", "notes": "This is the callback to slide 3's thesis — say the line, don't rush past it." },
+          { "sceneId": "closing", "notes": "Land on the last line. Let it sit before opening questions. Mention: potentially adding real repo issues as practice questions for students to work through next." }
+        ],
+        "slideSequences": []
+      }
+    </script>
+
+    <!-- 1. TITLE — 0-8s -->
+    <div id="scene-title" class="scene-frame is-active" data-composition-id="title" data-start="0" data-duration="8" data-width="1920" data-height="1080" data-label="Title">
+      <section id="slide-title" class="clip slide center" data-start="0" data-duration="8" data-track-index="1">
+        <h1 id="title-headline" class="headline giant">Good Code vs. Bad Code</h1>
+      </section>
+    </div>
+
+    <!-- 2. INTRO — 8-18s (fragments) -->
+    <div id="scene-intro" class="scene-frame" data-composition-id="intro" data-start="8" data-duration="10" data-width="1920" data-height="1080" data-label="Intro">
+      <section id="slide-intro" class="clip slide center" data-start="8" data-duration="10" data-track-index="1">
+        <p id="intro-eyebrow" class="eyebrow">Who's talking</p>
+        <h1 id="intro-line1" class="headline fragment-item">I'm 20, and I want to become a better developer.</h1>
+        <h2 id="intro-line2" class="headline accent-line fragment-item" style="font-size: 52px">
+          Since AI's been writing all the code for people my age — how do we even tell good code from bad code?
+        </h2>
+      </section>
+    </div>
+
+    <!-- 3. THE REAL ISSUE — 18-28s -->
+    <div id="scene-real-issue" class="scene-frame" data-composition-id="real-issue" data-start="18" data-duration="10" data-width="1920" data-height="1080" data-label="The real issue">
+      <section id="slide-real-issue" class="clip slide" data-start="18" data-duration="10" data-track-index="1">
+        <p id="issue-eyebrow" class="eyebrow">The real issue</p>
+        <h2 id="issue-headline" class="headline">
+          There's a growing disconnect between student and worker.
+        </h2>
+        <p id="issue-body" class="body-text">
+          AI has made it easy to skip learning how to write code by hand. What it's leaving behind is a growing gap in real skill — and almost nobody's teaching how to close it.
+        </p>
+      </section>
+    </div>
+
+    <!-- 4. TWO SYMPTOMS — 28-40s (fragments) -->
+    <div id="scene-two-symptoms" class="scene-frame" data-composition-id="two-symptoms" data-start="28" data-duration="12" data-width="1920" data-height="1080" data-label="For example">
+      <section id="slide-two-symptoms" class="clip slide" data-start="28" data-duration="12" data-track-index="1">
+        <p id="symptoms-eyebrow" class="eyebrow">For example</p>
+        <h2 id="symptoms-headline" class="headline tight">Here's what that gap actually looks like.</h2>
+        <div class="checklist">
+          <div id="symptom-1" class="checklist-item fragment-item">
+            <span class="num mono">01</span>
+            <span>For Example, most students don't know what an "agent" is... unless they spent way more time down this AI rabbit hole than they were ever assigned to.</span>
+          </div>
+          <div id="symptom-2" class="checklist-item fragment-item">
+            <span class="num mono">02</span>
+            <span>AI mostly gets used to cheat, not to learn — every shortcut taken is a rep of debugging skill that never gets built.</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 5. SUPPOSED TO LEARN — 40-50s -->
+    <div id="scene-supposed-to-learn" class="scene-frame" data-composition-id="supposed-to-learn" data-start="40" data-duration="10" data-width="1920" data-height="1080" data-label="How you're supposed to learn this">
+      <section id="slide-supposed-to-learn" class="clip slide" data-start="40" data-duration="10" data-track-index="1">
+        <p id="supposed-eyebrow" class="eyebrow">How you're "supposed" to learn this</p>
+        <h2 id="supposed-headline" class="headline tight">
+          Cold-dive into a stranger's git repo. Or land an internship and pick it up on the job.
+        </h2>
+        <div id="supposed-cols" class="two-col">
+          <div class="col" style="border-color: var(--medium)">
+            <h3 style="color: var(--medium)">Diving into repos</h3>
+            <p>No guide, no feedback, no way to know if you actually found the bug — or just something that looked like one.</p>
+          </div>
+          <div class="col" style="border-color: var(--medium)">
+            <h3 style="color: var(--medium)">Internships</h3>
+            <p>Genuinely good when you land one. But it shouldn't be the filter that decides who gets to develop this skill in the first place.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 6. AUDIENCE QUESTION — 50-60s -->
+    <div id="scene-audience-question" class="scene-frame" data-composition-id="audience-question" data-start="50" data-duration="10" data-width="1920" data-height="1080" data-label="Your turn">
+      <section id="slide-audience-question" class="clip slide center" data-start="50" data-duration="10" data-track-index="1">
+        <p class="eyebrow">Your turn</p>
+        <h2 class="headline">How did you learn to read code?</h2>
+        <div id="form-card" class="form-card"></div>
+        <p class="caption">Scan to answer.</p>
+      </section>
+    </div>
+
+    <!-- 7. WORK IN PROGRESS — 60-70s -->
+    <div id="scene-work-in-progress" class="scene-frame" data-composition-id="work-in-progress" data-start="60" data-duration="10" data-width="1920" data-height="1080" data-label="Where I'm at">
+      <section id="slide-work-in-progress" class="clip slide center" data-start="60" data-duration="10" data-track-index="1">
+        <p id="wip-eyebrow" class="eyebrow">Where I'm at</p>
+        <h2 id="wip-headline" class="headline">
+          My attempt at fixing this is still a work in progress.
+        </h2>
+        <p id="wip-body" class="body-text">
+          I'm 20. I'm a student. I don't have this all figured out — and I'm glad to be getting advice from people who have a lot more experience than me.
+        </p>
+      </section>
+    </div>
+
+    <!-- 8. KNOWCODE 1 — 70-80s -->
+    <div id="scene-knowcode-1" class="scene-frame" data-composition-id="knowcode-1" data-start="70" data-duration="10" data-width="1920" data-height="1080" data-label="So I built KnowCode">
+      <section id="slide-knowcode-1" class="clip slide" data-start="70" data-duration="10" data-track-index="1">
+        <p id="kc1-eyebrow" class="eyebrow">So I built KnowCode</p>
+        <h2 id="kc1-headline" class="headline tight">
+          A gym for reading code — flag the bug, name the cause, ship the fix.
+        </h2>
+        <div id="kc1-mock" class="mock-app" style="max-width: 1400px">
+          <div class="mock-code mono">
+            <div class="row">function sumArray(nums) {</div>
+            <div class="row flagged">&nbsp;&nbsp;for (let i = 0; i &lt;= nums.length; i++) {</div>
+            <div class="row">&nbsp;&nbsp;&nbsp;&nbsp;total += nums[i];</div>
+            <div class="row">&nbsp;&nbsp;}</div>
+            <div class="row">&nbsp;&nbsp;return total;</div>
+            <div class="row">}</div>
+          </div>
+          <div class="mock-panel">
+            <div class="mock-q">What's the root cause of this bug?</div>
+            <div class="mock-choice correct">Off-by-one: the loop condition should use &lt; instead of &lt;=</div>
+            <div class="mock-choice">total should be initialized to 1 instead of 0</div>
+            <div class="mock-choice">The function is missing a return statement</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 9. KNOWCODE 2 — 80-90s -->
+    <div id="scene-knowcode-2" class="scene-frame" data-composition-id="knowcode-2" data-start="80" data-duration="10" data-width="1920" data-height="1080" data-label="Why this, specifically">
+      <section id="slide-knowcode-2" class="clip slide" data-start="80" data-duration="10" data-track-index="1">
+        <p id="kc2-eyebrow" class="eyebrow">Why this, specifically</p>
+        <h2 id="kc2-headline" class="headline">
+          You don't need to write the loop by hand anymore. You still need to know it's broken.
+        </h2>
+        <p id="kc2-body" class="body-text">
+          KnowCode is deliberate practice for exactly the skill AI took off the table — not writing code, reading it.
+        </p>
+      </section>
+    </div>
+
+    <!-- 10. CLOSING — 90-98s -->
+    <div id="scene-closing" class="scene-frame" data-composition-id="closing" data-start="90" data-duration="8" data-width="1920" data-height="1080" data-label="Closing">
+      <section id="slide-closing" class="clip slide center" data-start="90" data-duration="8" data-track-index="1">
+        <p id="closing-eyebrow" class="eyebrow">Closing</p>
+        <h2 id="closing-headline" class="headline">
+          I still don't have a clean answer for good code vs. bad code.
+        </h2>
+        <p id="closing-cta" class="body-text" style="color: var(--accent); font-weight: 600">
+          But now there's a way to practice finding it — and I'm still collecting your answers too.
+        </p>
+      </section>
+    </div>
+
+    <!-- Presenter chrome: self-contained nav bar + speaker notes -->
+    <div id="nav-bar">
+      <button type="button" id="nav-notes" aria-label="Toggle speaker notes">&#128221;</button>
+      <button type="button" id="nav-prev" aria-label="Previous">&#8592;</button>
+      <span id="nav-counter">1 / 10</span>
+      <button type="button" id="nav-next" aria-label="Next">&#8594;</button>
+    </div>
+    <div id="notes-panel">
+      <div class="notes-label">Speaker notes</div>
+      <div id="notes-text"></div>
+    </div>
+
+    <script>
+      // Paste the Google Form URL here before presenting — the QR code on the
+      // "Your turn" slide renders automatically once this is set.
+      var FORM_URL = "";
+
+      window.__timelines = window.__timelines || {};
+
+      function makeTimeline() {
+        return gsap.timeline({ paused: true });
+      }
+
+      // 1. title
+      (function () {
+        var tl = makeTimeline();
+        tl.from("#title-headline", { opacity: 0, y: 24, duration: 0.6 }, 0.1);
+        window.__timelines["title"] = tl;
+      })();
+
+      // 2. intro — 2 fragments
+      (function () {
+        var tl = makeTimeline();
+        tl.from("#intro-eyebrow", { opacity: 0, y: 20, duration: 0.4 }, 8.1);
+        tl.fromTo("#intro-line1", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.35 }, 8.5);
+        tl.fromTo("#intro-line2", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.35 }, 9.0);
+        window.__timelines["intro"] = tl;
+      })();
+
+      // 3. real-issue
+      (function () {
+        var tl = makeTimeline();
+        tl.from("#issue-eyebrow", { opacity: 0, y: 20, duration: 0.4 }, 18.1);
+        tl.from("#issue-headline", { opacity: 0, y: 24, duration: 0.5 }, 18.2);
+        tl.from("#issue-body", { opacity: 0, y: 16, duration: 0.4 }, 18.6);
+        window.__timelines["real-issue"] = tl;
+      })();
+
+      // 4. two-symptoms — 2 fragments
+      (function () {
+        var tl = makeTimeline();
+        tl.from("#symptoms-eyebrow", { opacity: 0, y: 20, duration: 0.4 }, 28.1);
+        tl.from("#symptoms-headline", { opacity: 0, y: 24, duration: 0.5 }, 28.2);
+        tl.fromTo("#symptom-1", { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.35 }, 28.4);
+        tl.fromTo("#symptom-2", { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.35 }, 28.8);
+        window.__timelines["two-symptoms"] = tl;
+      })();
+
+      // 5. supposed-to-learn
+      (function () {
+        var tl = makeTimeline();
+        tl.from("#supposed-eyebrow", { opacity: 0, y: 20, duration: 0.4 }, 40.1);
+        tl.from("#supposed-headline", { opacity: 0, y: 24, duration: 0.5 }, 40.2);
+        tl.from("#supposed-cols .col", { opacity: 0, y: 20, duration: 0.4, stagger: 0.12 }, 40.6);
+        window.__timelines["supposed-to-learn"] = tl;
+      })();
+
+      // 6. audience-question
+      (function () {
+        var tl = makeTimeline();
+        tl.from("#slide-audience-question .eyebrow", { opacity: 0, y: 20, duration: 0.4 }, 50.1);
+        tl.from("#slide-audience-question .headline", { opacity: 0, y: 24, duration: 0.5 }, 50.2);
+        tl.from("#form-card", { opacity: 0, y: 20, duration: 0.45 }, 50.6);
+        tl.from("#slide-audience-question .caption", { opacity: 0, y: 16, duration: 0.4 }, 51.0);
+        window.__timelines["audience-question"] = tl;
+      })();
+
+      // 7. work-in-progress
+      (function () {
+        var tl = makeTimeline();
+        tl.from("#wip-eyebrow", { opacity: 0, y: 20, duration: 0.4 }, 60.1);
+        tl.from("#wip-headline", { opacity: 0, y: 24, duration: 0.5 }, 60.2);
+        tl.from("#wip-body", { opacity: 0, y: 16, duration: 0.4 }, 60.6);
+        window.__timelines["work-in-progress"] = tl;
+      })();
+
+      // 8. knowcode-1
+      (function () {
+        var tl = makeTimeline();
+        tl.from("#kc1-eyebrow", { opacity: 0, y: 20, duration: 0.4 }, 70.1);
+        tl.from("#kc1-headline", { opacity: 0, y: 24, duration: 0.5 }, 70.2);
+        tl.from("#kc1-mock", { opacity: 0, y: 20, duration: 0.45 }, 70.6);
+        window.__timelines["knowcode-1"] = tl;
+      })();
+
+      // 9. knowcode-2
+      (function () {
+        var tl = makeTimeline();
+        tl.from("#kc2-eyebrow", { opacity: 0, y: 20, duration: 0.4 }, 80.1);
+        tl.from("#kc2-headline", { opacity: 0, y: 24, duration: 0.5 }, 80.2);
+        tl.from("#kc2-body", { opacity: 0, y: 16, duration: 0.4 }, 80.6);
+        window.__timelines["knowcode-2"] = tl;
+      })();
+
+      // 10. closing
+      (function () {
+        var tl = makeTimeline();
+        tl.from("#closing-eyebrow", { opacity: 0, y: 20, duration: 0.4 }, 90.1);
+        tl.from("#closing-headline", { opacity: 0, y: 24, duration: 0.5 }, 90.2);
+        tl.from("#closing-cta", { opacity: 0, y: 16, duration: 0.4 }, 90.7);
+        window.__timelines["closing"] = tl;
+      })();
+
+      // Render the QR code for the audience-question slide (pure client-side,
+      // no network fetch — qrcode-generator encodes locally from FORM_URL).
+      (function () {
+        var wrap = document.getElementById("form-card");
+        if (!FORM_URL) {
+          wrap.innerHTML =
+            '<div class="form-placeholder">Set FORM_URL near the top of the &lt;script&gt; to render the QR code here</div>';
+          return;
+        }
+        var qr = qrcode(0, "M");
+        qr.addData(FORM_URL);
+        qr.make();
+        var img = document.createElement("img");
+        img.alt = "Scan to open the form";
+        img.src = qr.createDataURL(10, 4);
+        wrap.appendChild(img);
+      })();
+
+      // ---- Self-contained presenter/navigation controller ----
+      // Reads the slideshow JSON island for slide order, fragments, and notes.
+      // Does not depend on any external player/engine — plain click + arrow keys.
+      (function () {
+        var manifest = JSON.parse(document.getElementById("slideshow-manifest").textContent);
+        var mainSlides = manifest.slides;
+
+        var mainIndex = 0;
+        var fragmentIndex = -1; // -1 = rest frame (all fragments revealed or none defined)
+
+        function sceneElOf(sceneId) {
+          return document.getElementById("scene-" + sceneId);
+        }
+
+        function activateScene(sceneId) {
+          mainSlides.forEach(function (s) {
+            var el = sceneElOf(s.sceneId);
+            if (el) el.classList.toggle("is-active", s.sceneId === sceneId);
+          });
+        }
+
+        function restTimeFor(sceneStartAttr) {
+          // Land just past the last authored tween so entrances resolve to their final state.
+          return sceneStartAttr + 1.5;
+        }
+
+        function dataStartOf(sceneId) {
+          var el = document.getElementById("slide-" + sceneId);
+          return el ? parseFloat(el.getAttribute("data-start")) : 0;
+        }
+
+        function updateCounter() {
+          document.getElementById("nav-counter").textContent = (mainIndex + 1) + " / " + mainSlides.length;
+          document.getElementById("nav-prev").disabled = mainIndex === 0;
+          document.getElementById("nav-next").disabled = mainIndex === mainSlides.length - 1;
+        }
+
+        function updateNotes() {
+          var slide = mainSlides[mainIndex];
+          document.getElementById("notes-text").textContent = (slide && slide.notes) || "";
+        }
+
+        // Animate a scene's own timeline to a target time instead of snapping
+        // to it instantly, so entrance/fragment tweens actually play on screen.
+        function revealTo(sceneId, targetTime) {
+          var tl = window.__timelines[sceneId];
+          var start = dataStartOf(sceneId);
+          var current = tl.time();
+          if (current < start) {
+            tl.seek(start);
+            current = start;
+          }
+          var dist = Math.abs(targetTime - current);
+          if (dist < 0.05) {
+            tl.seek(targetTime);
+            return;
+          }
+          // Linear ("none") is critical here: an eased scrub front-loads almost
+          // all of the playhead motion into the first ~150ms regardless of the
+          // tween's nominal duration, so the individual .from()/.fromTo() reveals
+          // (which have their own eases) never get a chance to actually show.
+          // A constant-rate scrub lets real elapsed time track timeline time 1:1.
+          var duration = Math.min(Math.max(dist, 0.25), 1.6);
+          tl.tweenTo(targetTime, { duration: duration, ease: "none" });
+        }
+
+        function showMain(index, atFragment) {
+          mainIndex = Math.max(0, Math.min(mainSlides.length - 1, index));
+          var slide = mainSlides[mainIndex];
+          activateScene(slide.sceneId);
+          if (slide.fragments && slide.fragments.length) {
+            fragmentIndex = atFragment === undefined ? 0 : atFragment;
+            fragmentIndex = Math.max(0, Math.min(slide.fragments.length - 1, fragmentIndex));
+            var isLast = fragmentIndex === slide.fragments.length - 1;
+            var holdTime = isLast
+              ? slide.fragments[fragmentIndex] + 1
+              : slide.fragments[fragmentIndex + 1] - 0.05;
+            revealTo(slide.sceneId, holdTime);
+          } else {
+            fragmentIndex = -1;
+            revealTo(slide.sceneId, restTimeFor(dataStartOf(slide.sceneId)));
+          }
+          updateCounter();
+          updateNotes();
+        }
+
+        function next() {
+          var slide = mainSlides[mainIndex];
+          if (slide.fragments && slide.fragments.length && fragmentIndex < slide.fragments.length - 1) {
+            showMain(mainIndex, fragmentIndex + 1);
+            return;
+          }
+          if (mainIndex < mainSlides.length - 1) showMain(mainIndex + 1, 0);
+        }
+
+        function prev() {
+          var slide = mainSlides[mainIndex];
+          if (slide.fragments && slide.fragments.length && fragmentIndex > 0) {
+            showMain(mainIndex, fragmentIndex - 1);
+            return;
+          }
+          if (mainIndex > 0) showMain(mainIndex - 1, 0);
+        }
+
+        document.getElementById("nav-next").addEventListener("click", next);
+        document.getElementById("nav-prev").addEventListener("click", prev);
+        document.getElementById("nav-notes").addEventListener("click", function () {
+          document.getElementById("notes-panel").classList.toggle("is-open");
+        });
+
+        window.addEventListener("keydown", function (e) {
+          if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); next(); }
+          else if (e.key === "ArrowLeft" || e.key === "Backspace") { e.preventDefault(); prev(); }
+        });
+
+        // Initial paint: rest-frame slide 1.
+        showMain(0, 0);
+      })();
+
+      // Scale the fixed 1920x1080 stage to fit whatever window it's opened in.
+      (function () {
+        function fit() {
+          var scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+          document.documentElement.style.setProperty("--stage-scale", scale);
+        }
+        window.addEventListener("resize", fit);
+        fit();
+      })();
+    </script>
+  </body>
+</html>
